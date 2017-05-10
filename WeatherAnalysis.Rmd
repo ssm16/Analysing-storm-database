@@ -11,7 +11,9 @@ knitr::opts_chunk$set(cache=TRUE)
 This report addresses the question, which types of weather events are 1) most harmful with respect to population health and 2) have the greatest economic consequences across the United States. 
 To answer these questions, data from the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database from 1950 to 2011 is used.
     
-The data processing consists of removing unnecessary variables, creating two new variables that sum up the consequences to population health and economic consequences and summarizing the effects of weather events grouped by event type. With this processed data, pareto charts containing the TOP 5 weather events for each consequence in question (injuries, fatalities and the sum of these as well as damage to property and crop and the sum of those) are prepared. 
+The data processing consists of removing unnecessary variables, making the damage costs comparable, creating two new variables that sum up the consequences to population health and economic consequences and summarizing the effects of weather events grouped by event type. With this processed data, pareto charts containing the TOP 5 weather events for each consequence in question (injuries, fatalities and the sum of these as well as damage to property and crop and the sum of those) are prepared. 
+
+The TOP 3 events most harmful for population health are tornados, excessive heat and TSTM wind. The TOP 3 events with the greatest economic consequences are flood, hurricane/typhoon and tornados. For details see result section.
 
 ### Data Processing
 
@@ -40,19 +42,37 @@ dim(storm_data)
 Explanation on the variables used in the downloaded data set can be found here: 
 https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf
 
-To answer the questions above, only the columns EVTYPE (event type), FATALITIES and INJURIES for the first question and PROPDMG (property damage) and CROPDMG (crop damage) for the second question are needed. All other 32 columns are deleted, the remaining column names are converted to lowercase.
+To answer the questions above, only the columns EVTYPE (event type), FATALITIES and INJURIES for the first question and PROPDMG (property damage), PROPDMGEXP, CROPDMG (crop damage) and CROPDMGEXP for the second question are needed. All other 30 columns are deleted, the remaining column names are converted to lowercase.
 
 ```{r}
 # only relevant columns are kept
-storm_data<-storm_data[,c(8, 23, 24, 25, 27)]
+storm_data<-storm_data[,c(8, 23:28)]
 
 # for easier use all names are converted to lower
 names(storm_data)<-tolower(names(storm_data))
 ```
 
-To complete the data set, two new variables are added: "health" to sum up the number of fatalities and injuries and "damage" to sum up the costs of property damage and crop damage. The data is then grouped by the event type and the effects to population health and the economic consequences are summarized.
+The variables propdmg and cropdmg are coded in varying units. If variable propdmgexp/cropdmgexp equals "K" the value is given in thousand $, for "M" in million $ and for "B" in billion $. The variables "prop_mult" and "crop_mult" are temporarily created and filled with the number the costs need to be multiplied to make them comparable. After the adjusting of the costs for the damages the temporary variables are deleted.
+
+To complete the data set, afterwards two new variables are added: "health" to sum up the number of fatalities and injuries and "damage" to sum up the adjusted costs of property damage and crop damage. The data is then grouped by the event type and the effects to population health and the economic consequences are summarized by group.
+
 ```{r, message=FALSE}
 library(dplyr)
+
+# creation of temporary variables for multiplication of damage costs
+storm_data<-mutate(storm_data, prop_mult = ifelse(propdmgexp=="K", yes=1000, 
+                                                no=(ifelse(propdmgexp=="M", yes=1000000, 
+                                                         no=(ifelse(propdmgexp=="B", yes=1000000000, no=1))))))
+
+storm_data<-mutate(storm_data, crop_mult = ifelse(cropdmgexp=="K", yes=1000, 
+                                                no=(ifelse(cropdmgexp=="M", yes=1000000, 
+                                                         no=(ifelse(cropdmgexp=="B", yes=1000000000, no=1))))))
+
+# costs for damages are adjusted by multiplying with prop_mult and crop_mult
+storm_data<-mutate(storm_data, propdmg=propdmg*prop_mult, cropdmg=cropdmg*crop_mult) 
+
+# temporary variables prop_mult and crop_mult are deleted
+storm_data<-storm_data[,c(1:4,6)]
 
 # summarizing variables are added
 storm_data<-mutate(storm_data, health=fatalities+injuries, damage=propdmg+cropdmg)
@@ -65,7 +85,7 @@ sums<-summarize_all(data_grouped, sum)
 
 The resulting data set already directly contains the information to answer the questions. 
 
-The following pareto charts containing the TOP 5 weather events per weather consequence in question serve as a basis for a prioritization on which severe weather events to prepare:
+The following pareto charts containing the TOP 5 weather events for each weather consequence in question serve as a basis for a prioritization on which severe weather events to prepare first:
 
 ```{r}
 # creating data sets in decreasing order for each weather consequence in question
@@ -86,30 +106,30 @@ par(mfrow=c(1,3), las=3, mar=c(9.1, 4.1, 4.1, 2.1), oma=c(2,0,2,0))
 
 # population health
 barplot(height=health5$health/1000,names.arg=health5$evtype, 
-        ylab="Total of injuries and fatalies caused by event in 1,000", ylim=c(0,100))
+        ylab="Total of injuries and fatalies in 1,000", ylim=c(0,100))
 title("Injuries and fatalities")
 
 barplot(height=injur5$injuries/1000,names.arg=injur5$evtype, 
-        ylab="Total of injuries caused by event in 1,000", ylim=c(0,100))
+        ylab="Total of injuries in 1,000", ylim=c(0,100))
 title("Injuries")
 
 barplot(height=fatal5$fatalities/1000,names.arg=fatal5$evtype, 
-        ylab="Total of fatalies caused by event in 1,000", ylim=c(0,100))
+        ylab="Total of fatalies in 1,000", ylim=c(0,100))
 title("Fatalities")
 
 title("Top 5 weather events most harmful to population health", outer=TRUE)
 
 # costs for damages
-barplot(height=dmg5$damage/1000,names.arg=dmg5$evtype, 
-        ylab="Total of property and crop damage costs caused by event in 1,000$", ylim=c(0,4000))
+barplot(height=dmg5$damage/1000000000,names.arg=dmg5$evtype, 
+        ylab="Total of property and crop damage costs in billion $", ylim=c(0,160))
 title("Property and crop damage costs")
 
-barplot(height=prop5$propdmg/1000,names.arg=prop5$evtype, 
-        ylab="Total of property damage costs caused by event in 1,000$", ylim=c(0,4000))
+barplot(height=prop5$propdmg/1000000000,names.arg=prop5$evtype, 
+        ylab="Total of property damage costs in billion $", ylim=c(0,160))
 title("Property damage costs")
 
-barplot(height=crop5$cropdmg/1000,names.arg=crop5$evtype, 
-        ylab="Total of crop damage costs caused by event in 1,000$", ylim=c(0,4000))
+barplot(height=crop5$cropdmg/1000000000,names.arg=crop5$evtype, 
+        ylab="Total of crop damage costs in billion $", ylim=c(0,160))
 title("Crop damage costs")
 
 title("Top 5 weather events with greatest economic consequences", outer=TRUE)
@@ -118,13 +138,12 @@ title("Top 5 weather events with greatest economic consequences", outer=TRUE)
 ### Results
 The pareto charts show that tornados are - by far - the weather events most harmful to population health. Combining injuries and fatalities, excessive heat and TSTM wind are on second and third place, but effects of tornados are a lot larger.
 
-Looking at injuries only, TSTM wind is on second place and flood takes the third place.
+Looking at injuries only, TSTM wind is on second place following tornados and flood takes the third place.
 
-For fatalities excessive heat is on second place, flash floods on third place.
+For fatalities excessive heat is on second place following tornados, flash floods are on third place.
 
-The greatest economic consequences are those which cause the largest costs for property and crop damages. Looking at these costs summed up, tornados again are the event types that have the greatest consequences. Tornados are followed by flash floods and TSTM wind.
+The greatest economic consequences concerning property and crop damage costs are caused by flood. The weather event on second place is hurricane/typhoon which causes about half of the costs of flood. On third place are tornados.
 
-Only looking at the costs for property damage, the same order of the leading 3 event types as for the combined economic consequences occurs.
+The ranking is the same when only looking at the costs for property damage.
 
-In contrast, for crop damage costs hail is the most harmful weather event. It is followed - with some distance - by flash flood and flood.
-
+In contrast, for crop damage costs drought is the most harmful weather event, followed by flood and river flood.
